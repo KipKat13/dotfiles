@@ -166,7 +166,7 @@ install_basic_packages() {
         "unzip"
         "zip"
         "htop"
-        "fastfetch"
+        "neofetch"
         "tree"
         "man-db"
         "man-pages"
@@ -387,8 +387,461 @@ install_fonts() {
     fi
 }
 
+# Detect monitors and generate monitor configuration
+detect_and_configure_monitors() {
+    print_status "Detecting monitors..."
+    
+    # Install wlr-randr for monitor detection if not already installed
+    if ! command -v wlr-randr &> /dev/null; then
+        install_packages "official" "wlr-randr"
+    fi
+    
+    local monitor_config=""
+    local temp_hypr_config="/tmp/hyprland_monitor_test.conf"
+    
+    # Create a minimal Hyprland config for monitor detection
+    cat > "$temp_hypr_config" << 'EOF'
+monitor=,preferred,auto,1
+input {
+    kb_layout = us
+}
+general {
+    gaps_in = 0
+    gaps_out = 0
+    border_size = 1
+}
+EOF
+    
+    # Try to get monitor info using different methods
+    local monitors_info=""
+    
+    # Method 1: Use hyprctl if Hyprland is running
+    if pgrep -x "Hyprland" > /dev/null; then
+        print_status "Hyprland is running, getting monitor info..."
+        monitors_info=$(hyprctl monitors -j 2>/dev/null || echo "")
+    fi
+    
+    # Method 2: Use drm info from /sys/class/drm
+    if [[ -z "$monitors_info" ]]; then
+        print_status "Reading monitor info from system..."
+        for card in /sys/class/drm/card*/card*-*/status; do
+            if [[ -f "$card" ]] && grep -q "connected" "$card"; then
+                local connector=$(basename "$(dirname "$card")")
+                local card_path=$(dirname "$(dirname "$card")")
+                local edid_file="$card_path/$connector/edid"
+                
+                if [[ -f "$edid_file" ]] && [[ -s "$edid_file" ]]; then
+                    # Try to get resolution from modes
+                    local modes_file="$card_path/$connector/modes"
+                    if [[ -f "$modes_file" ]]; then
+                        local preferred_mode=$(head -1 "$modes_file")
+                        if [[ -n "$preferred_mode" ]]; then
+                            monitor_config+="monitor=$connector,$preferred_mode,auto,1"
+
+# Setup shell
+setup_shell() {
+    # Create a flag file to track if shell setup is complete
+    local shell_flag="$HOME/.shell_setup_complete"
+    
+    if [[ -f "$shell_flag" ]]; then
+        print_status "Shell already set up (found flag file). Skipping..."
+        return 0
+    fi
+    
+    if ask_yes_no "Setup Zsh with Oh My Zsh?" "y"; then
+        print_status "Setting up Zsh..."
+        
+        # Make sure zsh is installed
+        if ! command -v zsh &> /dev/null; then
+            install_packages "official" "zsh"
+        fi
+        
+        # Install Oh My Zsh if not already installed
+        if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
+            print_status "Installing Oh My Zsh..."
+            # Use RUNZSH=no to prevent Oh My Zsh from starting a new shell
+            RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+        fi
+        
+        # Change default shell (but don't switch immediately)
+        if [[ "$SHELL" != "$(which zsh)" ]]; then
+            print_status "Changing default shell to Zsh..."
+            chsh -s "$(which zsh)"
+            print_status "Default shell changed to Zsh (will take effect after reboot)"
+        fi
+        
+        # Install popular Zsh plugins
+        if ask_yes_no "Install popular Zsh plugins?" "y"; then
+            local plugin_dir="${HOME}/.oh-my-zsh/custom/plugins"
+            mkdir -p "$plugin_dir"
+            
+            if [[ ! -d "$plugin_dir/zsh-autosuggestions" ]]; then
+                git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir/zsh-autosuggestions"
+            fi
+            
+            if [[ ! -d "$plugin_dir/zsh-syntax-highlighting" ]]; then
+                git clone https://github.com/zsh-users/zsh-syntax-highlighting "$plugin_dir/zsh-syntax-highlighting"
+            fi
+        fi
+        
+        # Create flag file to indicate shell setup is complete
+        touch "$shell_flag"
+        
+        print_status "Shell setup completed!"
+    fi
+}
+
+# Enable services
+enable_services() {
+    print_status "Enabling system services..."
+    
+    local services=(
+        "NetworkManager"
+    )
+    
+    # Only enable bluetooth if it's installed
+    if systemctl list-unit-files | grep -q "bluetooth"; then
+        services+=("bluetooth")
+    fi
+    
+    for service in "${services[@]}"; do
+        if systemctl list-unit-files | grep -q "$service"; then
+            if sudo systemctl enable "$service" 2>/dev/null; then
+                print_status "Enabled $service"
+            else
+                print_warning "Failed to enable $service"
+            fi
+        fi
+    done
+}
+
+# Setup firewall
+setup_firewall() {
+    if ask_yes_no "Setup and enable firewall (ufw)?" "y"; then
+        print_status "Setting up firewall..."
+        install_packages "official" "ufw"
+        if sudo ufw --force enable && sudo systemctl enable ufw; then
+            print_status "Firewall enabled successfully"
+        else
+            print_warning "Failed to enable firewall"
+        fi
+    fi
+}
+
+# Main setup function
+main() {
+    clear
+    echo -e "${PURPLE}"
+    echo "╔═══════════════════════════════════════╗"
+    echo "║     Arch Linux Hyprland Setup        ║"
+    echo "║           by KipKat13                 ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo
+    
+    print_status "Starting Arch Linux Hyprland setup..."
+    print_status "Logs will be saved to: $LOG_FILE"
+    echo
+    
+    # Pre-flight checks
+    check_root
+    check_arch
+    
+    # Ask user what they want to install
+    echo -e "${BLUE}=== Installation Options ===${NC}"
+    echo "This script will guide you through setting up your Arch system."
+    echo "You'll be asked about each component before installation."
+    echo
+    
+    if ask_yes_no "Continue with the setup?" "y"; then
+        # Core installation steps (with error handling)
+        print_status "=== Core System Setup ==="
+        update_system || print_warning "System update had issues, continuing..."
+        install_aur_helper || { print_error "Failed to install AUR helper, exiting"; exit 1; }
+        install_basic_packages
+        install_hyprland
+        install_hyprland_tools
+        
+        # Optional components
+        print_status "=== Optional Components ==="
+        install_dev_tools
+        install_media_tools
+        install_gaming_tools
+        install_fonts
+        
+        # Configuration
+        print_status "=== Configuration ==="
+        setup_dotfiles
+        setup_shell
+        enable_services
+        setup_firewall
+        
+        echo
+        print_status "Setup completed!"
+        echo -e "${GREEN}"
+        echo "╔═══════════════════════════════════════╗"
+        echo "║            Setup Complete!           ║"
+        echo "╚═══════════════════════════════════════╝"
+        echo -e "${NC}"
+        echo
+        print_status "Next steps:"
+        print_status "1. Reboot your system: sudo reboot"
+        print_status "2. After reboot, start Hyprland: Hyprland"
+        print_status "3. If you changed shell to Zsh, log out and back in"
+        echo
+        print_status "Check the setup log for any warnings: $LOG_FILE"
+        
+        if ask_yes_no "Reboot now?" "n"; then
+            sudo reboot
+        fi
+    else
+        print_status "Setup cancelled by user."
+        exit 0
+    fi
+}
+
+# Trap to handle interruption
+trap 'print_error "Setup interrupted by user"; exit 1' INT
+
+# Run main function
+main "$@"\n'
+                            print_status "Found monitor: $connector with resolution $preferred_mode"
+                        fi
+                    fi
+                fi
+            fi
+        done
+    fi
+    
+    # Method 3: Use xrandr if available (fallback)
+    if [[ -z "$monitor_config" ]] && command -v xrandr &> /dev/null; then
+        print_status "Using xrandr for monitor detection..."
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^([A-Za-z0-9-]+)\ connected.* ]]; then
+                local monitor_name="${BASH_REMATCH[1]}"
+                # Get preferred resolution
+                local resolution=$(echo "$line" | grep -o '[0-9]\+x[0-9]\+' | head -1)
+                if [[ -n "$resolution" ]]; then
+                    monitor_config+="monitor=$monitor_name,$resolution,auto,1"
+
+# Setup shell
+setup_shell() {
+    if ask_yes_no "Setup Zsh with Oh My Zsh?" "y"; then
+        print_status "Setting up Zsh..."
+        
+        # Make sure zsh is installed
+        if ! command -v zsh &> /dev/null; then
+            install_packages "official" "zsh"
+        fi
+        
+        # Install Oh My Zsh if not already installed
+        if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
+            print_status "Installing Oh My Zsh..."
+            RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+        fi
+        
+        # Change default shell
+        if [[ "$SHELL" != "$(which zsh)" ]]; then
+            print_status "Changing default shell to Zsh..."
+            chsh -s "$(which zsh)"
+        fi
+        
+        # Install popular Zsh plugins
+        if ask_yes_no "Install popular Zsh plugins?" "y"; then
+            local plugin_dir="${HOME}/.oh-my-zsh/custom/plugins"
+            
+            if [[ ! -d "$plugin_dir/zsh-autosuggestions" ]]; then
+                git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir/zsh-autosuggestions"
+            fi
+            
+            if [[ ! -d "$plugin_dir/zsh-syntax-highlighting" ]]; then
+                git clone https://github.com/zsh-users/zsh-syntax-highlighting "$plugin_dir/zsh-syntax-highlighting"
+            fi
+        fi
+    fi
+}
+
+# Enable services
+enable_services() {
+    print_status "Enabling system services..."
+    
+    local services=(
+        "NetworkManager"
+    )
+    
+    # Only enable bluetooth if it's installed
+    if systemctl list-unit-files | grep -q "bluetooth"; then
+        services+=("bluetooth")
+    fi
+    
+    for service in "${services[@]}"; do
+        if systemctl list-unit-files | grep -q "$service"; then
+            if sudo systemctl enable "$service" 2>/dev/null; then
+                print_status "Enabled $service"
+            else
+                print_warning "Failed to enable $service"
+            fi
+        fi
+    done
+}
+
+# Setup firewall
+setup_firewall() {
+    if ask_yes_no "Setup and enable firewall (ufw)?" "y"; then
+        print_status "Setting up firewall..."
+        install_packages "official" "ufw"
+        if sudo ufw --force enable && sudo systemctl enable ufw; then
+            print_status "Firewall enabled successfully"
+        else
+            print_warning "Failed to enable firewall"
+        fi
+    fi
+}
+
+# Main setup function
+main() {
+    clear
+    echo -e "${PURPLE}"
+    echo "╔═══════════════════════════════════════╗"
+    echo "║     Arch Linux Hyprland Setup        ║"
+    echo "║           by KipKat13                 ║"
+    echo "╚═══════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo
+    
+    print_status "Starting Arch Linux Hyprland setup..."
+    print_status "Logs will be saved to: $LOG_FILE"
+    echo
+    
+    # Pre-flight checks
+    check_root
+    check_arch
+    
+    # Ask user what they want to install
+    echo -e "${BLUE}=== Installation Options ===${NC}"
+    echo "This script will guide you through setting up your Arch system."
+    echo "You'll be asked about each component before installation."
+    echo
+    
+    if ask_yes_no "Continue with the setup?" "y"; then
+        # Core installation steps (with error handling)
+        print_status "=== Core System Setup ==="
+        update_system || print_warning "System update had issues, continuing..."
+        install_aur_helper || { print_error "Failed to install AUR helper, exiting"; exit 1; }
+        install_basic_packages
+        install_hyprland
+        install_hyprland_tools
+        
+        # Optional components
+        print_status "=== Optional Components ==="
+        install_dev_tools
+        install_media_tools
+        install_gaming_tools
+        install_fonts
+        
+        # Configuration
+        print_status "=== Configuration ==="
+        setup_dotfiles
+        setup_shell
+        enable_services
+        setup_firewall
+        
+        echo
+        print_status "Setup completed!"
+        echo -e "${GREEN}"
+        echo "╔═══════════════════════════════════════╗"
+        echo "║            Setup Complete!           ║"
+        echo "╚═══════════════════════════════════════╝"
+        echo -e "${NC}"
+        echo
+        print_status "Next steps:"
+        print_status "1. Reboot your system: sudo reboot"
+        print_status "2. After reboot, start Hyprland: Hyprland"
+        print_status "3. If you changed shell to Zsh, log out and back in"
+        echo
+        print_status "Check the setup log for any warnings: $LOG_FILE"
+        
+        if ask_yes_no "Reboot now?" "n"; then
+            sudo reboot
+        fi
+    else
+        print_status "Setup cancelled by user."
+        exit 0
+    fi
+}
+
+# Trap to handle interruption
+trap 'print_error "Setup interrupted by user"; exit 1' INT
+
+# Run main function
+main "$@"\n'
+                    print_status "Found monitor: $monitor_name with resolution $resolution"
+                fi
+            fi
+        done <<< "$(xrandr 2>/dev/null)"
+    fi
+    
+    # Fallback: Use generic configuration
+    if [[ -z "$monitor_config" ]]; then
+        print_warning "Could not detect specific monitors, using auto-configuration"
+        monitor_config="monitor=,preferred,auto,1"
+    fi
+    
+    # Save the monitor configuration
+    echo "$monitor_config" > /tmp/detected_monitors.conf
+    print_status "Monitor configuration saved to /tmp/detected_monitors.conf"
+    
+    # Clean up
+    rm -f "$temp_hypr_config"
+    
+    echo "$monitor_config"
+}
+
+# Update Hyprland monitor configuration
+update_hyprland_monitor_config() {
+    local hypr_config_path="$1"
+    local monitor_config="$2"
+    
+    if [[ ! -f "$hypr_config_path" ]]; then
+        print_warning "Hyprland config file not found: $hypr_config_path"
+        return 1
+    fi
+    
+    print_status "Updating Hyprland monitor configuration..."
+    
+    # Create backup
+    cp "$hypr_config_path" "$hypr_config_path.backup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Remove existing monitor lines and add new ones
+    # Create temp file with new config
+    local temp_config="/tmp/hyprland_config_temp"
+    
+    # Remove existing monitor configurations
+    grep -v '^monitor=' "$hypr_config_path" > "$temp_config"
+    
+    # Add new monitor configuration at the top
+    {
+        echo "# Auto-detected monitor configuration"
+        echo "$monitor_config"
+        echo ""
+        cat "$temp_config"
+    } > "$hypr_config_path"
+    
+    rm -f "$temp_config"
+    
+    print_status "Monitor configuration updated in $hypr_config_path"
+}
+
 # Comprehensive dotfiles setup function
 setup_dotfiles() {
+    # Create a flag file to track if dotfiles setup is complete
+    local dotfiles_flag="$HOME/.dotfiles_setup_complete"
+    
+    if [[ -f "$dotfiles_flag" ]]; then
+        print_status "Dotfiles already set up (found flag file). Skipping..."
+        return 0
+    fi
+    
     if ask_yes_no "Clone and setup dotfiles from your repository?" "y"; then
         print_status "Setting up dotfiles..."
         
@@ -473,28 +926,54 @@ setup_dotfiles() {
             fi
         done
         
-        # Method 4: Check for install script in dotfiles
+        # Method 4: Check for install script in dotfiles (but don't run if it might restart the setup)
         if [[ -f "$DOTFILES_DIR/install.sh" ]]; then
             print_status "Found install script in dotfiles repository"
-            if ask_yes_no "Run the dotfiles install script?" "y"; then
+            if ask_yes_no "Run the dotfiles install script? (WARNING: Make sure it doesn't restart this setup)" "n"; then
                 cd "$DOTFILES_DIR" || exit 1
                 chmod +x install.sh
-                ./install.sh
+                # Run in subshell to prevent it from affecting our script
+                (./install.sh)
             fi
         elif [[ -f "$DOTFILES_DIR/setup.sh" ]]; then
             print_status "Found setup script in dotfiles repository"
-            if ask_yes_no "Run the dotfiles setup script?" "y"; then
+            if ask_yes_no "Run the dotfiles setup script? (WARNING: Make sure it doesn't restart this setup)" "n"; then
                 cd "$DOTFILES_DIR" || exit 1
                 chmod +x setup.sh
-                ./setup.sh
+                # Run in subshell to prevent it from affecting our script
+                (./setup.sh)
             fi
+        fi
+        
+        # Configure monitors for Hyprland
+        local hypr_config_path=""
+        if [[ -f "$HOME/.config/hypr/hyprland.conf" ]]; then
+            hypr_config_path="$HOME/.config/hypr/hyprland.conf"
+        elif [[ -f "$HOME/.config/hypr/hypr.conf" ]]; then
+            hypr_config_path="$HOME/.config/hypr/hypr.conf"
+        fi
+        
+        if [[ -n "$hypr_config_path" ]]; then
+            if ask_yes_no "Auto-detect and configure monitors for Hyprland?" "y"; then
+                local monitor_config
+                monitor_config=$(detect_and_configure_monitors)
+                update_hyprland_monitor_config "$hypr_config_path" "$monitor_config"
+            fi
+        else
+            print_warning "Hyprland configuration file not found. Skipping monitor configuration."
         fi
         
         print_status "Dotfiles setup completed!"
         
+        # Create flag file to indicate dotfiles setup is complete
+        touch "$dotfiles_flag"
+        
         # List what was set up
         print_status "The following symlinks were created:"
         find "$HOME" -maxdepth 2 -type l -ls 2>/dev/null | grep "$DOTFILES_DIR" || print_warning "No symlinks found or ls command failed"
+        
+        # Return to home directory
+        cd "$HOME" || exit 1
     fi
 }
 
