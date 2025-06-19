@@ -4,7 +4,8 @@
 # Author: KipKat13
 # Description: Interactive setup script for fresh Arch installation with Hyprland
 
-set -e
+# Remove set -e to prevent immediate exit on errors
+# set -e
 
 # Colors for output
 RED='\033[0;31m'
@@ -82,28 +83,74 @@ check_arch() {
     fi
 }
 
+# Safe package installation with error handling
+install_packages() {
+    local package_type="$1"
+    shift
+    local packages=("$@")
+    local failed_packages=()
+    
+    print_status "Installing $package_type packages..."
+    
+    for package in "${packages[@]}"; do
+        print_status "Installing $package..."
+        if [[ "$package_type" == "AUR" ]]; then
+            if ! yay -S --needed --noconfirm "$package" 2>/dev/null; then
+                print_warning "Failed to install AUR package: $package"
+                failed_packages+=("$package")
+            fi
+        else
+            if ! sudo pacman -S --needed --noconfirm "$package" 2>/dev/null; then
+                print_warning "Failed to install package: $package"
+                failed_packages+=("$package")
+            fi
+        fi
+    done
+    
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        print_warning "The following $package_type packages failed to install:"
+        printf '%s\n' "${failed_packages[@]}"
+        echo
+    fi
+}
+
 # Update system
 update_system() {
     print_status "Updating system packages..."
-    sudo pacman -Syu --noconfirm
+    if ! sudo pacman -Syu --noconfirm; then
+        print_error "Failed to update system packages"
+        return 1
+    fi
 }
 
 # Install AUR helper (yay)
 install_aur_helper() {
     if command -v yay &> /dev/null; then
         print_status "AUR helper (yay) already installed"
-        return
+        return 0
     fi
     
     print_status "Installing AUR helper (yay)..."
-    sudo pacman -S --needed --noconfirm base-devel git
     
-    cd /tmp
-    git clone https://aur.archlinux.org/yay.git
-    cd yay
-    makepkg -si --noconfirm
-    cd ~
+    # Install dependencies first
+    install_packages "official" "base-devel" "git"
+    
+    cd /tmp || exit 1
+    if ! git clone https://aur.archlinux.org/yay.git; then
+        print_error "Failed to clone yay repository"
+        return 1
+    fi
+    
+    cd yay || exit 1
+    if ! makepkg -si --noconfirm; then
+        print_error "Failed to build yay"
+        return 1
+    fi
+    
+    cd ~ || exit 1
     rm -rf /tmp/yay
+    
+    print_status "AUR helper (yay) installed successfully"
 }
 
 # Install basic packages
@@ -119,7 +166,7 @@ install_basic_packages() {
         "unzip"
         "zip"
         "htop"
-        "neofetch"
+        "fastfetch"
         "tree"
         "man-db"
         "man-pages"
@@ -138,15 +185,14 @@ install_basic_packages() {
         "wireplumber"
         "pavucontrol"
         
-        # Fonts
+        # Basic fonts
         "ttf-liberation"
         "ttf-dejavu"
-        "ttf-opensans"
         "noto-fonts"
         "noto-fonts-emoji"
     )
     
-    sudo pacman -S --needed --noconfirm "${basic_packages[@]}"
+    install_packages "official" "${basic_packages[@]}"
 }
 
 # Install Hyprland and related packages
@@ -161,21 +207,18 @@ install_hyprland() {
         # Wayland essentials
         "wayland"
         "wayland-protocols"
-        "wayland-utils"
         "wl-clipboard"
-        "wlroots"
         
         # Display and graphics
         "qt5-wayland"
         "qt6-wayland"
-        "glfw-wayland"
         
         # Authentication
         "polkit"
         "polkit-gnome"
     )
     
-    sudo pacman -S --needed --noconfirm "${hyprland_packages[@]}"
+    install_packages "official" "${hyprland_packages[@]}"
 }
 
 # Install additional Hyprland tools
@@ -188,28 +231,23 @@ install_hyprland_tools() {
         "dunst"
         
         # Application launcher
-        "rofi-wayland"
+        "wofi"
         
         # Screenshot and screen recording
         "grim"
         "slurp"
         "swappy"
-        "wf-recorder"
         
         # File manager
         "thunar"
         "thunar-volman"
-        "thunar-archive-plugin"
         
         # Image viewer
         "imv"
         
-        # Media player
-        "mpv"
-        
-        # PDF viewer
-        "zathura"
-        "zathura-pdf-mupdf"
+        # Terminal
+        "kitty"
+        "alacritty"
         
         # Archive tools
         "file-roller"
@@ -217,7 +255,12 @@ install_hyprland_tools() {
         "unrar"
     )
     
-    sudo pacman -S --needed --noconfirm "${tools[@]}"
+    install_packages "official" "${tools[@]}"
+    
+    # Try to install rofi-wayland from AUR if wofi isn't preferred
+    if ask_yes_no "Install rofi-wayland (better launcher) from AUR?" "y"; then
+        install_packages "AUR" "rofi-wayland"
+    fi
 }
 
 # Install development tools
@@ -228,7 +271,7 @@ install_dev_tools() {
         local dev_packages=(
             # Editors
             "neovim"
-            "code"
+            "vim"
             
             # Programming languages
             "python"
@@ -240,34 +283,28 @@ install_dev_tools() {
             
             # Version control
             "git"
-            "github-cli"
             
             # Build tools
             "cmake"
             "make"
             "gcc"
-            "clang"
-            
-            # Debugging
-            "gdb"
-            "valgrind"
             
             # Terminal tools
             "tmux"
             "zsh"
             "fish"
-            "starship"
         )
         
-        sudo pacman -S --needed --noconfirm "${dev_packages[@]}"
+        install_packages "official" "${dev_packages[@]}"
         
-        # Install additional AUR packages for development
+        # Install additional tools from AUR
         if ask_yes_no "Install additional development tools from AUR?" "y"; then
-            yay -S --needed --noconfirm \
-                visual-studio-code-bin \
-                postman-bin \
-                discord \
-                slack-desktop
+            local dev_aur_packages=(
+                "visual-studio-code-bin"
+                "github-cli"
+                "starship"
+            )
+            install_packages "AUR" "${dev_aur_packages[@]}"
         fi
     fi
 }
@@ -278,22 +315,27 @@ install_media_tools() {
         print_status "Installing media and graphics tools..."
         
         local media_packages=(
-            # Graphics
-            "gimp"
-            "inkscape"
-            "blender"
-            
             # Media
             "vlc"
-            "obs-studio"
-            "audacity"
+            "mpv"
             
-            # Photography
-            "rawtherapee"
-            "darktable"
+            # Graphics (basic)
+            "gimp"
+            
+            # Audio
+            "audacity"
         )
         
-        sudo pacman -S --needed --noconfirm "${media_packages[@]}"
+        install_packages "official" "${media_packages[@]}"
+        
+        # Optional heavy graphics tools
+        if ask_yes_no "Install heavy graphics tools (Inkscape, Blender)?" "n"; then
+            local heavy_graphics=(
+                "inkscape"
+                "blender"
+            )
+            install_packages "official" "${heavy_graphics[@]}"
+        fi
     fi
 }
 
@@ -302,96 +344,174 @@ install_gaming_tools() {
     if ask_yes_no "Install gaming tools?" "n"; then
         print_status "Installing gaming tools..."
         
-        local gaming_packages=(
-            "steam"
-            "lutris"
-            "wine"
-            "winetricks"
-            "gamemode"
-            "mangohud"
-        )
-        
-        sudo pacman -S --needed --noconfirm "${gaming_packages[@]}"
-        
-        # Enable multilib repository for 32-bit support
+        # Enable multilib repository first
         if ! grep -q "^\[multilib\]" /etc/pacman.conf; then
             print_status "Enabling multilib repository..."
             sudo sed -i '/\[multilib\]/,/Include/s/^#//' /etc/pacman.conf
             sudo pacman -Sy
         fi
+        
+        local gaming_packages=(
+            "steam"
+            "lutris"
+            "wine"
+            "gamemode"
+        )
+        
+        install_packages "official" "${gaming_packages[@]}"
     fi
 }
 
 # Install additional fonts
 install_fonts() {
-    if ask_yes_no "Install additional fonts (including Nerd Fonts)?" "y"; then
+    if ask_yes_no "Install additional fonts?" "y"; then
         print_status "Installing additional fonts..."
         
         local font_packages=(
             "ttf-fira-code"
             "ttf-jetbrains-mono"
             "ttf-hack"
-            "ttf-ubuntu-font-family"
             "adobe-source-code-pro-fonts"
         )
         
-        sudo pacman -S --needed --noconfirm "${font_packages[@]}"
+        install_packages "official" "${font_packages[@]}"
         
         # Install Nerd Fonts from AUR
-        yay -S --needed --noconfirm \
-            ttf-jetbrains-mono-nerd \
-            ttf-firacode-nerd \
-            ttf-hack-nerd
+        if ask_yes_no "Install Nerd Fonts from AUR?" "y"; then
+            local nerd_fonts=(
+                "ttf-jetbrains-mono-nerd"
+                "ttf-firacode-nerd"
+            )
+            install_packages "AUR" "${nerd_fonts[@]}"
+        fi
     fi
 }
 
-# Setup dotfiles
+# Comprehensive dotfiles setup function
 setup_dotfiles() {
-    if ask_yes_no "Clone and setup dotfiles?" "y"; then
+    if ask_yes_no "Clone and setup dotfiles from your repository?" "y"; then
         print_status "Setting up dotfiles..."
         
         # Backup existing configs
+        local backup_dir="$HOME/.config.backup.$(date +%Y%m%d_%H%M%S)"
         if [[ -d "$HOME/.config" ]]; then
-            print_status "Backing up existing .config directory..."
-            mv "$HOME/.config" "$HOME/.config.backup.$(date +%Y%m%d_%H%M%S)"
+            print_status "Backing up existing .config directory to $backup_dir..."
+            mv "$HOME/.config" "$backup_dir"
         fi
         
         # Clone dotfiles repository
         if [[ -d "$DOTFILES_DIR" ]]; then
             print_status "Dotfiles directory already exists, pulling latest changes..."
-            cd "$DOTFILES_DIR"
+            cd "$DOTFILES_DIR" || exit 1
             git pull
         else
             print_status "Cloning dotfiles repository..."
-            git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
+            if ! git clone "$DOTFILES_REPO" "$DOTFILES_DIR"; then
+                print_error "Failed to clone dotfiles repository"
+                return 1
+            fi
         fi
         
-        cd "$DOTFILES_DIR"
+        cd "$DOTFILES_DIR" || exit 1
         
-        # Create symbolic links (customize this based on your repo structure)
-        print_status "Creating symbolic links..."
+        print_status "Setting up dotfiles..."
         
-        # Example symlinks - adjust based on your actual dotfiles structure
-        ln -sf "$DOTFILES_DIR/.config" "$HOME/.config"
+        # Create .config directory if it doesn't exist
+        mkdir -p "$HOME/.config"
         
-        # If you have specific files in your repo, symlink them here
-        # ln -sf "$DOTFILES_DIR/.zshrc" "$HOME/.zshrc"
-        # ln -sf "$DOTFILES_DIR/.bashrc" "$HOME/.bashrc"
-        # ln -sf "$DOTFILES_DIR/.vimrc" "$HOME/.vimrc"
+        # Function to safely create symlinks
+        create_symlink() {
+            local source="$1"
+            local target="$2"
+            
+            if [[ -e "$source" ]]; then
+                # Remove existing file/directory if it exists
+                if [[ -e "$target" ]] || [[ -L "$target" ]]; then
+                    rm -rf "$target"
+                fi
+                
+                # Create directory for target if needed
+                mkdir -p "$(dirname "$target")"
+                
+                # Create symlink
+                ln -sf "$source" "$target"
+                print_status "Created symlink: $target -> $source"
+            else
+                print_warning "Source file/directory not found: $source"
+            fi
+        }
         
-        print_status "Dotfiles setup complete!"
+        # Auto-detect and setup common dotfiles structure
+        print_status "Auto-detecting dotfiles structure..."
+        
+        # Check for common directory structures and create symlinks
+        
+        # Method 1: Check if there's a .config directory in dotfiles
+        if [[ -d "$DOTFILES_DIR/.config" ]]; then
+            print_status "Found .config directory in dotfiles"
+            for config_dir in "$DOTFILES_DIR/.config"/*; do
+                if [[ -d "$config_dir" ]]; then
+                    dir_name=$(basename "$config_dir")
+                    create_symlink "$config_dir" "$HOME/.config/$dir_name"
+                fi
+            done
+        fi
+        
+        # Method 2: Check for individual config directories in root
+        local common_configs=("hypr" "waybar" "kitty" "alacritty" "rofi" "wofi" "dunst" "nvim" "vim")
+        for config in "${common_configs[@]}"; do
+            if [[ -d "$DOTFILES_DIR/$config" ]]; then
+                create_symlink "$DOTFILES_DIR/$config" "$HOME/.config/$config"
+            fi
+        done
+        
+        # Method 3: Check for home directory dotfiles
+        local home_dotfiles=(".zshrc" ".bashrc" ".vimrc" ".tmux.conf" ".gitconfig")
+        for dotfile in "${home_dotfiles[@]}"; do
+            if [[ -f "$DOTFILES_DIR/$dotfile" ]]; then
+                create_symlink "$DOTFILES_DIR/$dotfile" "$HOME/$dotfile"
+            fi
+        done
+        
+        # Method 4: Check for install script in dotfiles
+        if [[ -f "$DOTFILES_DIR/install.sh" ]]; then
+            print_status "Found install script in dotfiles repository"
+            if ask_yes_no "Run the dotfiles install script?" "y"; then
+                cd "$DOTFILES_DIR" || exit 1
+                chmod +x install.sh
+                ./install.sh
+            fi
+        elif [[ -f "$DOTFILES_DIR/setup.sh" ]]; then
+            print_status "Found setup script in dotfiles repository"
+            if ask_yes_no "Run the dotfiles setup script?" "y"; then
+                cd "$DOTFILES_DIR" || exit 1
+                chmod +x setup.sh
+                ./setup.sh
+            fi
+        fi
+        
+        print_status "Dotfiles setup completed!"
+        
+        # List what was set up
+        print_status "The following symlinks were created:"
+        find "$HOME" -maxdepth 2 -type l -ls 2>/dev/null | grep "$DOTFILES_DIR" || print_warning "No symlinks found or ls command failed"
     fi
 }
 
 # Setup shell
 setup_shell() {
-    if ask_yes_no "Setup Zsh as default shell?" "y"; then
+    if ask_yes_no "Setup Zsh with Oh My Zsh?" "y"; then
         print_status "Setting up Zsh..."
         
-        # Install Oh My Zsh
+        # Make sure zsh is installed
+        if ! command -v zsh &> /dev/null; then
+            install_packages "official" "zsh"
+        fi
+        
+        # Install Oh My Zsh if not already installed
         if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
             print_status "Installing Oh My Zsh..."
-            sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+            RUNZSH=no CHSH=no sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
         fi
         
         # Change default shell
@@ -401,9 +521,16 @@ setup_shell() {
         fi
         
         # Install popular Zsh plugins
-        if ask_yes_no "Install popular Zsh plugins (zsh-autosuggestions, zsh-syntax-highlighting)?" "y"; then
-            git clone https://github.com/zsh-users/zsh-autosuggestions "${HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions" 2>/dev/null || true
-            git clone https://github.com/zsh-users/zsh-syntax-highlighting "${HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" 2>/dev/null || true
+        if ask_yes_no "Install popular Zsh plugins?" "y"; then
+            local plugin_dir="${HOME}/.oh-my-zsh/custom/plugins"
+            
+            if [[ ! -d "$plugin_dir/zsh-autosuggestions" ]]; then
+                git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir/zsh-autosuggestions"
+            fi
+            
+            if [[ ! -d "$plugin_dir/zsh-syntax-highlighting" ]]; then
+                git clone https://github.com/zsh-users/zsh-syntax-highlighting "$plugin_dir/zsh-syntax-highlighting"
+            fi
         fi
     fi
 }
@@ -414,13 +541,20 @@ enable_services() {
     
     local services=(
         "NetworkManager"
-        "bluetooth"
     )
+    
+    # Only enable bluetooth if it's installed
+    if systemctl list-unit-files | grep -q "bluetooth"; then
+        services+=("bluetooth")
+    fi
     
     for service in "${services[@]}"; do
         if systemctl list-unit-files | grep -q "$service"; then
-            sudo systemctl enable "$service"
-            print_status "Enabled $service"
+            if sudo systemctl enable "$service" 2>/dev/null; then
+                print_status "Enabled $service"
+            else
+                print_warning "Failed to enable $service"
+            fi
         fi
     done
 }
@@ -429,9 +563,12 @@ enable_services() {
 setup_firewall() {
     if ask_yes_no "Setup and enable firewall (ufw)?" "y"; then
         print_status "Setting up firewall..."
-        sudo pacman -S --needed --noconfirm ufw
-        sudo ufw enable
-        sudo systemctl enable ufw
+        install_packages "official" "ufw"
+        if sudo ufw --force enable && sudo systemctl enable ufw; then
+            print_status "Firewall enabled successfully"
+        else
+            print_warning "Failed to enable firewall"
+        fi
     fi
 }
 
@@ -461,37 +598,42 @@ main() {
     echo
     
     if ask_yes_no "Continue with the setup?" "y"; then
-        # Core installation steps
-        update_system
-        install_aur_helper
+        # Core installation steps (with error handling)
+        print_status "=== Core System Setup ==="
+        update_system || print_warning "System update had issues, continuing..."
+        install_aur_helper || { print_error "Failed to install AUR helper, exiting"; exit 1; }
         install_basic_packages
         install_hyprland
         install_hyprland_tools
         
         # Optional components
+        print_status "=== Optional Components ==="
         install_dev_tools
         install_media_tools
         install_gaming_tools
         install_fonts
         
         # Configuration
+        print_status "=== Configuration ==="
         setup_dotfiles
         setup_shell
         enable_services
         setup_firewall
         
         echo
-        print_status "Setup completed successfully!"
+        print_status "Setup completed!"
         echo -e "${GREEN}"
         echo "╔═══════════════════════════════════════╗"
         echo "║            Setup Complete!           ║"
         echo "╚═══════════════════════════════════════╝"
         echo -e "${NC}"
         echo
-        print_status "Please reboot your system to ensure all changes take effect."
-        print_status "After reboot, you can start Hyprland by typing 'Hyprland' in your terminal."
+        print_status "Next steps:"
+        print_status "1. Reboot your system: sudo reboot"
+        print_status "2. After reboot, start Hyprland: Hyprland"
+        print_status "3. If you changed shell to Zsh, log out and back in"
         echo
-        print_warning "If you changed your shell to Zsh, you may need to log out and back in."
+        print_status "Check the setup log for any warnings: $LOG_FILE"
         
         if ask_yes_no "Reboot now?" "n"; then
             sudo reboot
