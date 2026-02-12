@@ -29,6 +29,7 @@ vim.opt.rtp:prepend(lazypath)
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 vim.o.clipboard = "unnamedplus"
+vim.opt.foldenable = false  -- Disable folding by default
 
 -- Setup lazy.nvim
 require("lazy").setup("plugins")
