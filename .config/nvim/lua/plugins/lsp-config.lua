@@ -16,9 +16,15 @@ return {
     {
         "neovim/nvim-lspconfig",
         config = function()
-            local lspconfig = require ("lspconfig")
-            lspconfig.lua_ls.setup({})
-            lspconfig.ts_ls.setup({})
+            -- local lspconfig = require ("lspconfig")
+            -- lspconfig.lua_ls.setup({})
+            -- lspconfig.ts_ls.setup({})
+
+            vim.lsp.config("lua_ls", {})
+            vim.lsp.config("ts_ls", {})
+
+            --IMPORTANT: actually enable the servers
+            vim.lsp.enable({ "lua_ls", "ts_ls" })
 
             vim.keymap.set('n', 'K', vim.lsp.buf.hover, {})
             vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {})
