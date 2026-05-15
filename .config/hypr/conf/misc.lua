@@ -1,4 +1,4 @@
-# See https://wiki.hyprland.org/Configuring/Master-Layout/ for more 
+-- See https://wiki.hyprland.org/Configuring/Master-Layout/ for more 
 
 hl.config({
     misc = {

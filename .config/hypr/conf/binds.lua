@@ -17,16 +17,16 @@ hl.bind("SUPER + P", hl.dsp.exec_cmd("~/scripts/restart.sh"))
 -- hl.bind("SUPER, J", hl.dsp.togglesplit()); -- togglesplit have been finally removed. Please use layoutmsg now.
 
 -- Move focus with mainMod + arrow keys
-hl.bind("SUPER + right", hl.dsp.focus({ direction = "left" }))
+hl.bind("SUPER + left", hl.dsp.focus({ direction = "left" }))
 hl.bind("SUPER + right", hl.dsp.focus({ direction = "right" }))
 hl.bind("SUPER + up", hl.dsp.focus({ direction = "up" }))
 hl.bind("SUPER + down", hl.dsp.focus({ direction = "down" }))
 
 -- Move window with mainMod + shift + arrow keys
-hl.bind("SUPER + left", hl.dsp.window.move({ direction = "left", true }))
-hl.bind("SUPER + right", hl.dsp.window.move({ direction = "right", true }))
-hl.bind("SUPER + up", hl.dsp.window.move({ direction = "up", true }))
-hl.bind("SUPER + down", hl.dsp.window.move({ direction = "down", true }))
+hl.bind("SUPER + SHIFT + left", hl.dsp.window.move({ direction = "left", true }))
+hl.bind("SUPER + SHIFT + right", hl.dsp.window.move({ direction = "right", true }))
+hl.bind("SUPER + SHIFT + up", hl.dsp.window.move({ direction = "up", true }))
+hl.bind("SUPER + SHIFT + down", hl.dsp.window.move({ direction = "down", true }))
 
 -- Switch workspaces or move them around
 for i = 1, 10 do
