@@ -3,7 +3,7 @@
 {
     "layer": "top", // Waybar at top layer
     "position": "top", // Waybar position (top|bottom|left|right)
-    "height": 30, // Waybar height (to be removed for auto height)
+    "height": 35, // Waybar height (to be removed for auto height)
     //"width": 1280, // Waybar width
     "spacing": 4, // Gaps between modules (4px)
 
@@ -11,8 +11,9 @@
     "modules-left": [
         "hyprland/workspaces",
       //"hyprland/mode",
-        "custom/media",
+      //"custom/media",
 	"custom/spotify",
+    "custom/cava",
 	"mpd"
       //"tray"
 
@@ -43,16 +44,12 @@
          "disable-scroll": true,
          "all-outputs": true,
          "warp-on-scroll": false,
-         "format": "{name}: {icon}",
+         "format": "{name}",
+         "on-click": "hyprctl dispatch focus workspace:2",
          "format-icons": {
-             "1": "",
-             "2": "",
-             "3": "",
-             "4": "",
-             "5": "",
-             "urgent": "",
-             "focused": "",
-             "default": ""
+             "urgent": "",
+             "focused": "",
+             "default": ""
          }
      },
 
@@ -76,6 +73,7 @@
         "format": "<span style=\"italic\">{}</span>"
     },
     
+    // If you want album add the line '- {album} '
     "mpd": {
         "format": "{stateIcon} {consumeIcon}{randomIcon}{repeatIcon}{singleIcon}{artist} - {album} - {title} ({elapsedTime:%M:%S}/{totalTime:%M:%S}) ⸨{songPosition}|{queueLength}⸩ {volume}% ",
         "format-disconnected": "Disconnected ",
@@ -122,8 +120,8 @@
     },
     "clock#time": {
         "interval": 1,
-	"format": "{:%H:%M:%S}"
-        //"tooltip-format": "Time for coding!"
+	"format": "{:%H:%M:%S}",
+    "tooltip-format": "Time for coding!"
     },
     "clock#date": {
 	"interval": 10,
@@ -136,7 +134,7 @@
         "tooltip": false
     },
     "memory": {
-        "format": "{}% RAM"
+        "format": " {}%"
     },
         "disk": {
 	"interval": 30,
@@ -159,8 +157,12 @@
     "battery": {
         "states": {
             // "good": 95,
+            "charging": "charging",
             "warning": 30,
             "critical": 15
+        },
+        "class": {
+        "charging": "charging" // Ensure the charging state gets the charging class
         },
         "format": "{icon} {capacity}%",
         "format-full": "{icon} {capacity}%",
@@ -184,7 +186,7 @@
     },
     "network": {
         // "interface": "wlp2*", // (Optional) To force the use of this interface
-        "format-wifi": " {essid} ({signalStrength}%)",
+        "format-wifi": "  {essid} ({signalStrength}%)",
         "format-ethernet": "{ipaddr}/{cidr} ",
         "tooltip-format": "{ifname} via {gwaddr} ",
         "format-linked": "{ifname} (No IP) ",
@@ -193,10 +195,10 @@
     },
     "pulseaudio": {
         // "scroll-step": 1, // %, can be a float
-        "format": "{icon} {volume}%{format_source}",
+        "format": "{icon} {volume}% {format_source}",
         "format-bluetooth": "{volume}% {icon} {format_source}",
         "format-bluetooth-muted": " {icon} {format_source}",
-        "format-muted": " {format_source}",
+        "format-muted": " {format_source} ",
         //"format-source": "{volume}% ",
         "format-source-muted": "",
         "format-icons": {
@@ -212,11 +214,24 @@
     },
 
     "custom/spotify": {
-        "exec": "/usr/bin/python3 $HOME/.config/waybar/mediaplayer.py --player spotify",
+        "exec": "/usr/bin/python3 $HOME/.config/waybar/mediaplayer.py" /*--player spotify"*/,
 	"format": "{} ",
 	"return-type": "json",
-	"on-click": "playerctl play-pause"
+	/*"on-click": "playerctl --player=spotify play-pause",*/
+    "on-click": "playerctl play-pause",
+	"on-click-right": "playerctl next",
+    "on-click-middle": "playerctl previous",
+    "on-scroll-up": "playerctl next",
+    "on-scroll-down": "playerctl previous",
+    "smooth-scrolling-threshold": 10
+    },
+
+    "custom/cava": {
+    "exec": "cava -p ~/.config/cava/config_waybar | sed -u 's/;//g;s/0/▁/g;s/1/▂/g;s/2/▃/g;s/3/▄/g;s/4/▅/g;s/5/▆/g;s/6/▇/g;s/7/█/g;'",
+    "format": "{}",
+    "tooltip": false
     }
+
  /*   "custom/media": {
         "format": "{icon} {}",
         "return-type": "json",

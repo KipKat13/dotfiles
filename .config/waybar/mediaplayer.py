@@ -1,5 +1,6 @@
 
 #!/usr/bin/env python3
+from pydoc import html
 import gi
 gi.require_version("Playerctl", "2.0")
 from gi.repository import Playerctl, GLib
@@ -119,7 +120,7 @@ class PlayerManager:
         if player_name == "spotify" and "mpris:trackid" in metadata.keys() and ":ad:" in player.props.metadata["mpris:trackid"]:
             track_info = "Advertisement"
         elif artist is not None and title is not None:
-            track_info = f"{artist} - {title}"
+            track_info = html.escape(f"{artist} - {title}")
         else:
             track_info = title
 
